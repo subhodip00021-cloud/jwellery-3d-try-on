@@ -1,0 +1,169 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jewellery Face Tracking</title>
+<style>
+body {
+  margin: 0;
+  background: #111;
+  color: white;
+  font-family: Arial, sans-serif;
+  text-align: center;
+}
+h2 { padding: 15px; }
+#camera {
+  width: 100%;
+  max-width: 700px;
+  position: relative;
+  margin: auto;
+}
+video, canvas {
+  width: 100%;
+  display: block;
+  border-radius: 12px;
+}
+video {
+  transform: scaleX(-1);
+}
+canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: scaleX(-1);
+}
+button {
+  padding: 14px 22px;
+  margin: 15px;
+  background: #d6b56d;
+  border: none;
+  border-radius: 8px;
+  font-weight: bold;
+  cursor: pointer;
+}
+#status { padding: 12px; }
+</style>
+</head>
+<body>
+
+<h2>Jewellery Face Tracking Demo</h2>
+
+<div id="camera">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas"></canvas>
+</div>
+
+<p id="status">Click Start Camera</p>
+<button id="start">Start Camera</button>
+<button id="stop">Stop Camera</button>
+
+<script type="module">
+import {
+  FaceLandmarker,
+  FilesetResolver
+} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/vision_bundle.mjs";
+
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const status = document.getElementById("status");
+
+let camera;
+let tracker;
+let running = false;
+
+async function startCamera() {
+  try {
+    status.textContent = "Loading face tracking...";
+
+    const vision = await FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm"
+    );
+
+    tracker = await FaceLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath:
+          "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+      },
+      runningMode: "VIDEO",
+      numFaces: 1
+    });
+
+    camera = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user" },
+      audio: false
+    });
+
+    video.srcObject = camera;
+    await video.play();
+
+    running = true;
+    status.textContent = "Camera started";
+    trackFace();
+
+  } catch (error) {
+    status.textContent = "Error: " + error.message;
+  }
+}
+
+function trackFace() {
+  if (!running) return;
+
+  if (video.readyState >= 2) {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const result = tracker.detectForVideo(
+      video,
+      performance.now()
+    );
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (result.faceLandmarks.length > 0) {
+      const points = result.faceLandmarks[0];
+
+      ctx.fillStyle = "#00ffcc";
+
+      for (let i = 0; i < points.length; i += 5) {
+        const p = points[i];
+        ctx.beginPath();
+        ctx.arc(
+          p.x * canvas.width,
+          p.y * canvas.height,
+          2,
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+      }
+
+      status.textContent =
+        "Face detected! " + points.length + " landmarks";
+    } else {
+      status.textContent = "No face detected";
+    }
+  }
+
+  requestAnimationFrame(trackFace);
+}
+
+document.getElementById("start").onclick = startCamera;
+
+document.getElementById("stop").onclick = () => {
+  running = false;
+
+  if (camera) {
+    camera.getTracks().forEach(track => track.stop());
+  }
+
+  video.srcObject = null;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  status.textContent = "Camera stopped";
+};
+</script>
+
+</body>
+</html>
